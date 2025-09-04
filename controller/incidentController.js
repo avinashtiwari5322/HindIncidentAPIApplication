@@ -101,6 +101,14 @@ exports.saveIncidentActions = async (req, res) => {
     } = req.body;
 
     const pool = await poolPromise;
+    // Check for duplicate IncidentActions for this IncidentID
+    const duplicateCheck = await pool.request()
+      .input('IncidentID', sql.Int, id)
+      .query('SELECT IncidentID FROM IncidentActions WHERE IncidentID = @IncidentID');
+    if (duplicateCheck.recordset.length > 0) {
+      return res.status(400).json({ message: 'IncidentAction already Assigned for this IncidentID.' });
+    }
+
     // Save IncidentActions
     await pool.request()
       .input('IncidentID', sql.Int, id)
