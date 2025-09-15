@@ -1,3 +1,138 @@
+exports.getIncidentAssignFileByPermitId = async (req, res) => {
+  try {
+    const { permitId } = req.params;
+    if (!permitId) {
+      return res.status(400).json({ message: 'permitId (FileID) is required.' });
+    }
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('IncidentID', sql.Int, permitId)
+      .query('SELECT FileName, ContentType, FileData FROM IncidentAssignFiles WHERE IncidentID = @IncidentID');
+    if (!result.recordset.length) {
+      return res.status(404).json({ message: 'File not found.' });
+    }
+    const file = result.recordset[0];
+    res.setHeader('Content-Disposition', `attachment; filename="${file.FileName}"`);
+    res.setHeader('Content-Type', file.ContentType || 'application/octet-stream');
+    res.send(file.FileData);
+  } catch (err) {
+    console.error('Error serving file:', err);
+    res.status(500).json({ message: 'Failed to serve file', error: err.message });
+  }
+};
+
+// ---
+// API: Upload files for an assignment and save in IncidentAssignFiles table
+// Payload (multipart/form-data):
+//   assignId: <number>
+//   files: <file1>, <file2>, ... (attach as form-data fields)
+//   uploadedBy: <string> (optional)
+//
+// Example using Postman:
+//   Key: assignId      Value: 123
+//   Key: files         Value: (select multiple files)
+//   Key: uploadedBy    Value: "username" (optional)
+// ---
+exports.uploadAssignFiles = async (req, res) => {
+  try {
+    const { incidentId, uploadedBy } = req.body;
+    if (!incidentId || !req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'incidentId and at least one file are required.' });
+    }
+    const pool = await poolPromise;
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      await pool.request()
+        .input('IncidentID', sql.Int, incidentId)
+        .input('FileName', sql.NVarChar(255), file.originalname)
+        .input('ContentType', sql.NVarChar(100), file.mimetype)
+        .input('FileSize', sql.Int, file.size)
+        .input('FileData', sql.VarBinary(sql.MAX), file.buffer)
+        .input('UploadedOn', sql.DateTime, new Date())
+        .input('UploadedBy', sql.NVarChar(100), uploadedBy || null)
+        .query(`
+          INSERT INTO IncidentAssignFiles (IncidentID, FileName, ContentType, FileSize, FileData, UploadedOn, UploadedBy)
+          VALUES (@IncidentID, @FileName, @ContentType, @FileSize, @FileData, @UploadedOn, @UploadedBy)
+        `);
+    }
+    res.status(201).json({ message: 'Files uploaded and saved to IncidentAssignFiles table.' });
+  } catch (err) {
+    console.error('Error uploading assign files:', err);
+    res.status(500).json({ message: 'Failed to upload assign files', error: err.message });
+  }
+};
+// GET: Serve a file by FileID (PermitID)
+// Usage: GET /api/incident/file/:permitId
+exports.getIncidentFileByPermitId = async (req, res) => {
+  try {
+    const { permitId } = req.params;
+    if (!permitId) {
+      return res.status(400).json({ message: 'permitId (FileID) is required.' });
+    }
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('IncidentID', sql.Int, permitId)
+      .query('SELECT FileName, ContentType, FileData FROM IncidentFiles WHERE IncidentID = @IncidentID');
+    if (!result.recordset.length) {
+      return res.status(404).json({ message: 'File not found.' });
+    }
+    const file = result.recordset[0];
+    res.setHeader('Content-Disposition', `attachment; filename="${file.FileName}"`);
+    res.setHeader('Content-Type', file.ContentType || 'application/octet-stream');
+    res.send(file.FileData);
+  } catch (err) {
+    console.error('Error serving file:', err);
+    res.status(500).json({ message: 'Failed to serve file', error: err.message });
+  }
+};
+// ---
+// API: Upload files for an incident and save in IncidentFiles table
+// Payload (multipart/form-data):
+//   incidentId: <number>
+//   files: <file1>, <file2>, ... (attach as form-data fields)
+//   fileDescriptions: ["desc1", "desc2", ...] (optional, as JSON string)
+//
+// Example using Postman:
+//   Key: incidentId      Value: 123
+//   Key: files           Value: (select multiple files)
+//   Key: fileDescriptions Value: ["CCTV footage", "Witness statement"]
+// ---
+
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() }); // Store files in memory for DB insert
+
+// Express route handler (to be used in routes):
+// router.post('/incident/upload-files', upload.array('files'), incidentController.uploadIncidentFiles)
+exports.uploadIncidentFiles = async (req, res) => {
+  try {
+    const { incidentId } = req.body;
+    // Accept optional uploadedBy from body
+    const { uploadedBy } = req.body;
+    if (!incidentId || !req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'incidentId and at least one file are required.' });
+    }
+    const pool = await poolPromise;
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      await pool.request()
+        .input('IncidentID', sql.Int, incidentId)
+        .input('FileName', sql.NVarChar(255), file.originalname)
+        .input('ContentType', sql.NVarChar(100), file.mimetype)
+        .input('FileSize', sql.Int, file.size)
+        .input('FileData', sql.VarBinary(sql.MAX), file.buffer)
+        .input('UploadedOn', sql.DateTime, new Date())
+        .input('UploadedBy', sql.NVarChar(100), uploadedBy || null)
+        .query(`
+          INSERT INTO IncidentFiles (IncidentID, FileName, ContentType, FileSize, FileData, UploadedOn, UploadedBy)
+          VALUES (@IncidentID, @FileName, @ContentType, @FileSize, @FileData, @UploadedOn, @UploadedBy)
+        `);
+    }
+    res.status(201).json({ message: 'Files uploaded and saved to IncidentFiles table.' });
+  } catch (err) {
+    console.error('Error uploading incident files:', err);
+    res.status(500).json({ message: 'Failed to upload files', error: err.message });
+  }
+};
 // GET: Incident details for assign user by IncidentID (join IncidentReports, IncidentActions, IncidentAssign)
 exports.getIncidentByIdForAssignUser = async (req, res) => {
   try {
@@ -427,7 +562,7 @@ exports.createIncident = async (req, res) => {
       });
     }
 
-    await pool.request()
+  const result = await pool.request()
       // Basic Info
       .input("incident_date", sql.Date, incident_date)
       .input("incident_time", sql.Time, parsedTime)
@@ -499,6 +634,7 @@ exports.createIncident = async (req, res) => {
           InjuredVisitors,
           UploadedFiles
         )
+        OUTPUT INSERTED.IncidentID
         VALUES (
           @incident_date,
           @incident_time,
@@ -531,8 +667,11 @@ exports.createIncident = async (req, res) => {
         )
       `);
 
+    const incidentId = result.recordset && result.recordset[0] ? result.recordset[0].IncidentID : null;
+
     res.status(201).json({ 
       message: "Incident created successfully",
+      incidentId,
       timestamp: new Date().toISOString()
     });
 

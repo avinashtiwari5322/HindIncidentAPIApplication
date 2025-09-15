@@ -4,7 +4,12 @@ const express = require("express");
 const router = express.Router();
 const incidentController = require("../controller/incidentController");
 const loginController = require("../controller/loginController");
-
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+router.post('/incident/upload-files', upload.array('files'), incidentController.uploadIncidentFiles);
+router.post('/incident/assign/upload-files', upload.array('files'), incidentController.uploadAssignFiles);
+router.get('/incident/file/:permitId', incidentController.getIncidentFileByPermitId);
+router.get('/incident/assign-file/:permitId', incidentController.getIncidentAssignFileByPermitId);
 // Save IncidentActions
 router.post("/incident-actions", incidentController.saveIncidentActions);
 router.get("/incident/assign-user/details", incidentController.getIncidentByIdForAssignUser);
